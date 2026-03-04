@@ -291,7 +291,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let imagePath = 'https://images.unsplash.com/photo-1495521821757-a1efb6729352?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
         if (recipe.image) {
-            imagePath = recipe.image.startsWith('http') ? recipe.image : `assets/${recipe.image}`;
+            imagePath = recipe.image.startsWith('http') || recipe.image.startsWith('data:') ? recipe.image : `assets/${recipe.image}`;
         }
 
         detailImage.src = imagePath;
