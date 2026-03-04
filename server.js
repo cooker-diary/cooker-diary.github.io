@@ -14,6 +14,7 @@ const ADMIN_PASSWORD = 'cook123';
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(express.static(__dirname)); // Serve static files (HTML, CSS, JS, images)
 
 // Ensure assets directory exists
 if (!fs.existsSync('assets')) {
