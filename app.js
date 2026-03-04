@@ -180,7 +180,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
             let imagePath = 'https://images.unsplash.com/photo-1495521821757-a1efb6729352?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
             if (recipe.image) {
-                imagePath = recipe.image.startsWith('http') || recipe.image.startsWith('data:') ? recipe.image : `assets/${recipe.image}`;
+                // If the path already has assets/ (from CSV map formatting), don't add it again
+                if (recipe.image.startsWith('http') || recipe.image.startsWith('data:') || recipe.image.startsWith('assets/')) {
+                    imagePath = recipe.image;
+                } else {
+                    imagePath = `assets/${recipe.image}`;
+                }
             }
 
             const categoryLabel = recipe.category || 'Uncategorized';
@@ -291,7 +296,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let imagePath = 'https://images.unsplash.com/photo-1495521821757-a1efb6729352?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
         if (recipe.image) {
-            imagePath = recipe.image.startsWith('http') || recipe.image.startsWith('data:') ? recipe.image : `assets/${recipe.image}`;
+            if (recipe.image.startsWith('http') || recipe.image.startsWith('data:') || recipe.image.startsWith('assets/')) {
+                imagePath = recipe.image;
+            } else {
+                imagePath = `assets/${recipe.image}`;
+            }
         }
 
         detailImage.src = imagePath;
@@ -368,11 +377,77 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    const fetchRecipes = () => {
+    const fetchRecipes = async () => {
         const stored = localStorage.getItem('cookerDiaryRecipes');
-        recipes = stored ? JSON.parse(stored) : [];
-        renderRecipes();
+        let localRecipes = stored ? JSON.parse(stored) : [];
+        
+        try {
+            // Fetch database.csv statically
+            const response = await fetch('database.csv');
+            if (response.ok) {
+                const csvData = await response.text();
+                Papa.parse(csvData, {
+                    header: true,
+                    skipEmptyLines: true,
+                    complete: function(results) {
+                        const csvRecipes = results.data.map(row => {
+                            // Ensure image path is properly formatted if from CSV
+                            let imgPath = row.image;
+                            if (imgPath && !imgPath.startsWith('http') && !imgPath.startsWith('data:') && !imgPath.startsWith('assets/')) {
+                                imgPath = `assets/${imgPath}`;
+                            }
+                            // Clean up any extra quotes or weird formatting that might come from CSV
+                            let desc = row.description || '';
+                            // Remove wrapping quotes if they accidentally got parsed
+                            if (desc.startsWith('"') && desc.endsWith('"')) {
+                                desc = desc.substring(1, desc.length - 1);
+                            }
+                            
+                            return {
+                                id: row.id,
+                                title: row.title,
+                                image: imgPath,
+                                description: desc,
+                                date: row.date,
+                                category: row.category || 'Uncategorized',
+                                rating: row.rating || '0'
+                            };
+                        });
 
+                        // Merge recipes: Local localStorage overrides CSV rows with the same ID
+                        const recipeMap = new Map();
+                        
+                        csvRecipes.forEach(r => recipeMap.set(r.id, r));
+                        localRecipes.forEach(r => recipeMap.set(r.id, r)); // Local overrides CSV for the user
+                        
+                        recipes = Array.from(recipeMap.values());
+                        renderRecipes();
+                        
+                        // Check for shared recipe
+                        handleInitialLoad();
+                    },
+                    error: function(error) {
+                        console.error('Error parsing CSV:', error);
+                        recipes = localRecipes;
+                        renderRecipes();
+                        handleInitialLoad();
+                    }
+                });
+            } else {
+                console.error('Could not fetch database.csv');
+                recipes = localRecipes;
+                renderRecipes();
+                handleInitialLoad();
+            }
+        } catch (error) {
+            console.error('Failed to fetch recipes:', error);
+            recipes = localRecipes;
+            renderRecipes();
+            handleInitialLoad();
+        }
+    };
+    
+    const handleInitialLoad = () => {
         const urlParams = new URLSearchParams(window.location.search);
         const shareId = urlParams.get('id');
         if (shareId) {
