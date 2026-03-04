@@ -239,40 +239,24 @@ document.addEventListener('DOMContentLoaded', () => {
     let isEditing = false;
     let editRecipeId = null;
 
-    recipeForm.addEventListener('submit', async (e) => {
+    recipeForm.addEventListener('submit', (e) => {
         e.preventDefault();
 
-        let targetUrl = 'http://localhost:3000/recipes';
-        let method = 'POST';
-
-        // 1. Handle actual image file upload if a file is selected
         let finalImageName = '';
         const imageFileInput = document.getElementById('recipeImage');
         if (imageFileInput.files.length > 0) {
-            const formData = new FormData();
-            formData.append('image', imageFileInput.files[0]);
-
-            try {
-                const uploadRes = await fetch('http://localhost:3000/upload', {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${adminPassword}` },
-                    body: formData
-                });
-
-                if (uploadRes.ok) {
-                    const uploadData = await uploadRes.json();
-                    finalImageName = uploadData.filename;
-                } else {
-                    showToast('Failed to upload image', 'error');
-                    return;
-                }
-            } catch (err) {
-                console.error('Upload error', err);
-                showToast('Image upload error', 'error');
-                return;
-            }
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                finalImageName = event.target.result;
+                saveRecipeData(finalImageName);
+            };
+            reader.readAsDataURL(imageFileInput.files[0]);
+        } else {
+            saveRecipeData(finalImageName);
         }
+    });
 
+    const saveRecipeData = (finalImageName) => {
         const recipeData = {
             id: isEditing ? editRecipeId : Date.now().toString(),
             title: document.getElementById('recipeTitle').value,
@@ -284,52 +268,23 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         if (isEditing) {
-            targetUrl = `http://localhost:3000/recipes/${editRecipeId}`;
-            method = 'PUT';
+            const index = recipes.findIndex(r => r.id === editRecipeId);
+            if (index !== -1) recipes[index] = recipeData;
+            viewRecipeModal.classList.remove('active');
+            showToast('Recipe updated successfully!', 'success');
+        } else {
+            recipes.push(recipeData);
+            showToast('Recipe saved successfully!', 'success');
         }
 
-        console.log('--- SUBMIT RECIPE ---');
-        console.log('isEditing:', isEditing);
-        console.log('editRecipeId:', editRecipeId);
-        console.log('targetUrl:', targetUrl);
-        console.log('method:', method);
-        console.log('recipeData:', recipeData);
-
-        try {
-            const response = await fetch(targetUrl, {
-                method: method,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${adminPassword}`
-                },
-                body: JSON.stringify(recipeData)
-            });
-
-            if (response.ok) {
-                if (isEditing) {
-                    const index = recipes.findIndex(r => r.id === editRecipeId);
-                    if (index !== -1) recipes[index] = recipeData;
-                    viewRecipeModal.classList.remove('active');
-                    showToast('Recipe updated successfully!', 'success');
-                } else {
-                    recipes.push(recipeData);
-                    showToast('Recipe saved successfully!', 'success');
-                }
-                renderRecipes();
-            } else {
-                showToast(isEditing ? 'Failed to update recipe' : 'Failed to save recipe', 'error');
-            }
-        } catch (error) {
-            console.error('Error saving recipe:', error);
-            showToast('Cannot save recipe. Server running?', 'error');
-        }
-
+        saveRecipes();
+        renderRecipes();
         addRecipeModal.classList.remove('active');
         recipeForm.reset();
         recipeRatingHidden.value = '0';
         updateStarUI(0);
         isEditing = false;
-    });
+    };
 
     const openViewModal = (recipe) => {
         currentViewingId = recipe.id;
@@ -390,30 +345,13 @@ document.addEventListener('DOMContentLoaded', () => {
         addRecipeModal.classList.add('active');
     });
 
-    deleteRecipeBtn.addEventListener('click', async () => {
-        // Custom confirmation logic
+    deleteRecipeBtn.addEventListener('click', () => {
         showToast('Processing deletion...', 'warning');
-
-        try {
-            const response = await fetch(`http://localhost:3000/recipes/${currentViewingId}`, {
-                method: 'DELETE',
-                headers: {
-                    'Authorization': `Bearer ${adminPassword}`
-                }
-            });
-
-            if (response.ok) {
-                recipes = recipes.filter(r => r.id !== currentViewingId);
-                renderRecipes();
-                viewRecipeModal.classList.remove('active');
-                showToast('Recipe deleted permanently', 'success');
-            } else {
-                showToast('Failed to delete recipe', 'error');
-            }
-        } catch (error) {
-            console.error('Error deleting recipe:', error);
-            showToast('Cannot delete recipe. Server running?', 'error');
-        }
+        recipes = recipes.filter(r => r.id !== currentViewingId);
+        saveRecipes();
+        renderRecipes();
+        viewRecipeModal.classList.remove('active');
+        showToast('Recipe deleted permanently', 'success');
     });
 
     shareRecipeBtn.addEventListener('click', () => {
@@ -430,31 +368,21 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    const fetchRecipes = async () => {
-        try {
-            const response = await fetch('http://localhost:3000/recipes');
-            if (response.ok) {
-                recipes = await response.json();
-                renderRecipes();
+    const fetchRecipes = () => {
+        const stored = localStorage.getItem('cookerDiaryRecipes');
+        recipes = stored ? JSON.parse(stored) : [];
+        renderRecipes();
 
-                // Check if there is an ?id= parameter to open a shared recipe
-                const urlParams = new URLSearchParams(window.location.search);
-                const shareId = urlParams.get('id');
-                if (shareId) {
-                    const sharedRecipe = recipes.find(r => r.id === shareId);
-                    if (sharedRecipe) {
-                        openViewModal(sharedRecipe);
-                    }
-                }
-            } else {
-                showToast('Failed to load recipes', 'error');
-            }
-        } catch (error) {
-            console.error('Error fetching recipes:', error);
-            showToast('Cannot connect to local server.', 'error');
-            recipes = [];
-            renderRecipes();
+        const urlParams = new URLSearchParams(window.location.search);
+        const shareId = urlParams.get('id');
+        if (shareId) {
+            const sharedRecipe = recipes.find(r => r.id === shareId);
+            if (sharedRecipe) openViewModal(sharedRecipe);
         }
+    };
+
+    const saveRecipes = () => {
+        localStorage.setItem('cookerDiaryRecipes', JSON.stringify(recipes));
     };
 
     window.addEventListener('click', (e) => {
